@@ -150,6 +150,21 @@ jobs:
           
               raise last_exc  # pragma: no cover
           
+          def print_connectivity_diagnostics():
+              # This helps distinguish "runner has no internet" vs "Docker Hub is returning 5xx".
+              checks = [
+                  ("docker_hub_api_root", "https://hub.docker.com/v2/"),
+                  ("docker_registry_v2", "https://registry-1.docker.io/v2/"),
+                  ("docker_status", "https://www.dockerstatus.com/api/v2/status.json"),
+              ]
+              for name, url in checks:
+                  try:
+                      r = requests.get(url, timeout=10)
+                      preview = (r.text or "")[:200].replace("\n", "\\n")
+                      print(f"DIAG: {name} status={r.status_code} url={url} body_preview={preview}")
+                  except Exception as e:
+                      print(f"DIAG: {name} error={e} url={url}")
+          
           # Read README.md
           with open('README.md', 'r') as f:
               readme_content = f.read()
@@ -170,6 +185,7 @@ jobs:
           except Exception as e:
               # Docker Hub occasionally returns transient 5xx here; don't fail the whole build on that.
               print(f"WARN: Docker Hub login failed after retries: {e}")
+              print_connectivity_diagnostics()
               print("WARN: Skipping README sync due to Docker Hub login instability.")
               raise SystemExit(0)
           
