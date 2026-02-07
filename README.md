@@ -67,6 +67,10 @@ The container runs Chromium with:
 - `VNC_RESOLUTION`: Set the display resolution (default: `1920x1080x24`)
 - `SESSION_DATA_PATH`: Set the path for Chrome user data directory (default: `/session-data`)
 
+## Kubernetes Deployment
+
+For Kubernetes deployment examples, see [Kubernetes Deployment Guide](docs/k8s.md).
+
 ## Notes
 
 - The container runs in headless mode with Xvfb
