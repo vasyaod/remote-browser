@@ -77,7 +77,6 @@ jobs:
           docker run -d --name test-remote-browser \
             -p 9222:9222 \
             -p 5900:5900 \
-            -p 6080:6080 \
             test-remote-browser:latest
 
       - name: Run port tests

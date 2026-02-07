@@ -51,9 +51,6 @@ spec:
         - name: vnc
           containerPort: 5900
           hostPort: 5900
-        - name: vnc-http
-          containerPort: 6080
-          hostPort: 6080
         volumeMounts:
         - name: session-data
           mountPath: /session-data
@@ -84,10 +81,6 @@ spec:
     protocol: TCP
     port: 5900
     targetPort: 5900
-  - name: vnc-http
-    protocol: TCP
-    port: 6080
-    targetPort: 6080
   type: ClusterIP
 ```
 
@@ -113,7 +106,6 @@ kubectl apply -f k8s-deployment.yaml
 ## Access the Services
 
 - **Chrome DevTools**: `http://<node-ip>:9222`
-- **VNC over HTTP**: `http://<node-ip>:6080` (noVNC web client)
 - **VNC Server**: Connect to `<node-ip>:5900` using any VNC client
 
 ## Notes

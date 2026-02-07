@@ -55,22 +55,3 @@ def test_port_5900_vnc_server(container_name, wait_for_services):
     finally:
         sock.close()
 
-
-def test_port_6080_vnc_http(container_name, wait_for_services):
-    """Test that VNC over HTTP port 6080 is accessible."""
-    max_attempts = 30
-    attempt = 0
-    
-    while attempt < max_attempts:
-        try:
-            response = requests.get("http://localhost:6080", timeout=2)
-            assert response.status_code == 200, f"Expected 200, got {response.status_code}"
-            assert "noVNC" in response.text or "vnc" in response.text.lower(), "Should contain noVNC content"
-            print("✓ Port 6080 (VNC over HTTP) is accessible")
-            return
-        except (requests.exceptions.RequestException, AssertionError) as e:
-            attempt += 1
-            if attempt >= max_attempts:
-                pytest.fail(f"Port 6080 failed to respond after {max_attempts} attempts: {e}")
-            time.sleep(2)
-
