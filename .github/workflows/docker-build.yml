@@ -116,3 +116,44 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Update Docker Hub README
+        if: github.event_name != 'pull_request'
+        run: |
+          python3 << 'EOF'
+          import json
+          import requests
+          import os
+          
+          # Read README.md
+          with open('README.md', 'r') as f:
+              readme_content = f.read()
+          
+          # Prepare API request
+          username = os.environ['DOCKERHUB_USERNAME']
+          token = os.environ['DOCKERHUB_TOKEN']
+          image_name = os.environ['IMAGE_NAME']
+          
+          url = f"https://hub.docker.com/v2/repositories/{username}/{image_name}/"
+          headers = {"Content-Type": "application/json"}
+          data = {"full_description": readme_content}
+          
+          # Update Docker Hub repository description
+          response = requests.patch(
+              url,
+              auth=(username, token),
+              headers=headers,
+              json=data
+          )
+          
+          if response.status_code in [200, 201]:
+              print("✓ Docker Hub README updated successfully")
+          else:
+              print(f"✗ Failed to update Docker Hub README: {response.status_code}")
+              print(f"Response: {response.text}")
+              exit(1)
+          EOF
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+
