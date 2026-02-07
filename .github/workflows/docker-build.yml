@@ -73,10 +73,11 @@ jobs:
 
       - name: Start test container
         run: |
-          echo "Starting container..."
+          echo "Starting container with VNC password..."
           docker run -d --name test-remote-browser \
             -p 9222:9222 \
             -p 5900:5900 \
+            -e VNC_PASSWORD=testpass123 \
             test-remote-browser:latest
 
       - name: Run port tests

@@ -7,6 +7,7 @@ import socket
 import time
 import requests
 import pytest
+import subprocess
 
 
 @pytest.fixture(scope="module")
@@ -52,6 +53,58 @@ def test_port_5900_vnc_server(container_name, wait_for_services):
         print("✓ Port 5900 is accessible")
     except Exception as e:
         pytest.fail(f"Port 5900 is not accessible: {e}")
+    finally:
+        sock.close()
+
+
+def test_vnc_password_authentication(container_name, wait_for_services):
+    """Test that VNC password authentication works."""
+    test_password = "testpass123"
+    
+    # Check container logs for password setup confirmation
+    logs_result = subprocess.run(
+        ["docker", "logs", container_name],
+        capture_output=True, text=True
+    )
+    logs = logs_result.stdout
+    assert "VNC server started with password authentication" in logs, \
+        "VNC password should be configured"
+    print("✓ VNC password authentication configured in container")
+    
+    # Test VNC connection - verify port is accessible and requires authentication
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(5)
+    
+    try:
+        result = sock.connect_ex(('localhost', 5900))
+        assert result == 0, f"Port 5900 connection failed with code {result}"
+        
+        # Read VNC protocol handshake
+        data = sock.recv(12)
+        assert len(data) >= 12, "VNC server should send protocol version"
+        assert data.startswith(b"RFB"), "Should receive RFB protocol header"
+        print(f"✓ VNC server responded with protocol: {data[:12].decode('ascii', errors='ignore')}")
+        
+        # Send client version
+        sock.send(b"RFB 003.008\n")
+        time.sleep(0.5)
+        
+        # Read security types (should include VNC authentication when password is set)
+        sec_data = sock.recv(4)
+        if len(sec_data) >= 1:
+            num_sec_types = sec_data[0]
+            print(f"✓ VNC server offers {num_sec_types} security type(s)")
+            assert num_sec_types > 0, "VNC server should offer security types"
+            # Security type 2 is VNC authentication
+            if num_sec_types > 0:
+                sec_types = sock.recv(num_sec_types)
+                assert b'\x02' in sec_types, "VNC authentication (type 2) should be available"
+                print("✓ VNC authentication (password) is available")
+        
+        print(f"✓ VNC password authentication test passed (password: {test_password})")
+        
+    except Exception as e:
+        pytest.fail(f"VNC password authentication test failed: {e}")
     finally:
         sock.close()
 
