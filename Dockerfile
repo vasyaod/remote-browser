@@ -39,7 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-numpy \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/chromium /usr/local/bin/chrome \
-    && pip3 install --no-cache-dir websockify \
+    && pip3 install --break-system-packages --no-cache-dir websockify \
     && curl -L https://github.com/novnc/noVNC/archive/v1.4.0.tar.gz | tar -xz -C /tmp \
     && mv /tmp/noVNC-1.4.0 /usr/share/novnc \
     && ln -s /usr/share/novnc/vnc.html /usr/share/novnc/index.html
