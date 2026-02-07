@@ -119,10 +119,10 @@ jobs:
 
       - name: Update Docker Hub README
         if: github.event_name != 'pull_request'
-        run: |
-          python3 scripts/dockerhub_sync_readme.py --readme README.md
-        env:
-          DOCKERHUB_USERNAME: ${{ env.DOCKERHUB_USERNAME }}
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
+          readme-filepath: README.md
 
