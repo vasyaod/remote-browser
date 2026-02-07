@@ -51,12 +51,69 @@ jobs:
             type=semver,pattern={{major}}
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Build and push Docker image
+      - name: Build Docker image (for testing)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          tags: test-remote-browser:latest
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test container ports
+        run: |
+          echo "Starting container..."
+          docker run -d --name test-remote-browser \
+            -p 9222:9222 \
+            -p 5900:5900 \
+            test-remote-browser:latest
+          
+          echo "Waiting for services to start..."
+          sleep 10
+          
+          echo "Testing port 9222 (Chrome remote debugging)..."
+          for i in {1..30}; do
+            if curl -s http://localhost:9222/json > /dev/null 2>&1; then
+              echo "✓ Port 9222 is accessible"
+              curl -s http://localhost:9222/json | head -c 200
+              echo ""
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "✗ Port 9222 failed to respond after 30 attempts"
+              docker logs test-remote-browser
+              exit 1
+            fi
+            sleep 2
+          done
+          
+          echo "Testing port 5900 (VNC server)..."
+          if timeout 5 bash -c 'cat < /dev/null > /dev/tcp/localhost/5900' 2>/dev/null; then
+            echo "✓ Port 5900 is accessible"
+          else
+            echo "✗ Port 5900 is not accessible"
+            docker logs test-remote-browser
+            exit 1
+          fi
+          
+          echo "All port tests passed!"
+          docker logs test-remote-browser | tail -20
+
+      - name: Cleanup test container
+        if: always()
+        run: |
+          docker stop test-remote-browser || true
+          docker rm test-remote-browser || true
+
+      - name: Build and push Docker image (multi-platform)
+        if: github.event_name != 'pull_request'
         uses: docker/build-push-action@v5
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
