@@ -87,19 +87,20 @@ def test_vnc_password_authentication(container_name, wait_for_services):
         
         # Send client version
         sock.send(b"RFB 003.008\n")
-        time.sleep(0.5)
         
-        # Read security types (should include VNC authentication when password is set)
-        sec_data = sock.recv(4)
-        if len(sec_data) >= 1:
-            num_sec_types = sec_data[0]
-            print(f"✓ VNC server offers {num_sec_types} security type(s)")
-            assert num_sec_types > 0, "VNC server should offer security types"
-            # Security type 2 is VNC authentication
-            if num_sec_types > 0:
-                sec_types = sock.recv(num_sec_types)
-                assert b'\x02' in sec_types, "VNC authentication (type 2) should be available"
-                print("✓ VNC authentication (password) is available")
+        # Read number of security types (1 byte)
+        num_sec_types_data = sock.recv(1)
+        assert len(num_sec_types_data) == 1, "Should receive number of security types"
+        num_sec_types = num_sec_types_data[0]
+        print(f"✓ VNC server offers {num_sec_types} security type(s)")
+        assert num_sec_types > 0, "VNC server should offer security types"
+        
+        # Read security types (N bytes where N is num_sec_types)
+        sec_types = sock.recv(num_sec_types)
+        assert len(sec_types) == num_sec_types, f"Should receive {num_sec_types} security type bytes"
+        # Security type 2 is VNC authentication
+        assert b'\x02' in sec_types, "VNC authentication (type 2) should be available"
+        print("✓ VNC authentication (password) is available")
         
         print(f"✓ VNC password authentication test passed (password: {test_password})")
         
