@@ -128,22 +128,37 @@ jobs:
           with open('README.md', 'r') as f:
               readme_content = f.read()
           
-          # Prepare API request
+          # Get JWT token from Docker Hub
           username = os.environ['DOCKERHUB_USERNAME']
-          token = os.environ['DOCKERHUB_TOKEN']
+          password = os.environ['DOCKERHUB_TOKEN']
           image_name = os.environ['IMAGE_NAME']
           
+          # Login to get JWT token
+          login_url = "https://hub.docker.com/v2/users/login/"
+          login_response = requests.post(
+              login_url,
+              json={"username": username, "password": password}
+          )
+          
+          if login_response.status_code != 200:
+              print(f"✗ Failed to authenticate with Docker Hub: {login_response.status_code}")
+              print(f"Response: {login_response.text}")
+              exit(1)
+          
+          jwt_token = login_response.json().get("token")
+          if not jwt_token:
+              print("✗ Failed to get JWT token from Docker Hub")
+              exit(1)
+          
+          # Update Docker Hub repository description using JWT token
           url = f"https://hub.docker.com/v2/repositories/{username}/{image_name}/"
-          headers = {"Content-Type": "application/json"}
+          headers = {
+              "Content-Type": "application/json",
+              "Authorization": f"JWT {jwt_token}"
+          }
           data = {"full_description": readme_content}
           
-          # Update Docker Hub repository description
-          response = requests.patch(
-              url,
-              auth=(username, token),
-              headers=headers,
-              json=data
-          )
+          response = requests.patch(url, headers=headers, json=data)
           
           if response.status_code in [200, 201]:
               print("✓ Docker Hub README updated successfully")
