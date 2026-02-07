@@ -199,6 +199,12 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--readme", default="README.md", help="Path to README file (default: README.md)")
     parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Fail (exit 1) if README sync cannot be completed (including Docker Hub 5xx). "
+        "Default behavior is best-effort (non-fatal) for CI pipelines.",
+    )
+    parser.add_argument(
         "--dockerhub-config",
         default="~/.dockerhub/config.json",
         help="Path to Docker Hub config (default: ~/.dockerhub/config.json)",
@@ -255,7 +261,7 @@ def main() -> int:
             print(f"WARN: Docker Hub login failed after retries: {e}", flush=True)
             print_connectivity_diagnostics()
             print("WARN: Skipping README sync due to Docker Hub login instability.", flush=True)
-            return 0
+            return 1 if args.strict else 0
 
         if login_response.status_code != 200:
             # Non-retryable failure (e.g. 401/403). This should fail so secrets can be fixed.
@@ -278,7 +284,7 @@ def main() -> int:
     except Exception as e:  # noqa: BLE001
         print(f"WARN: Docker Hub README update failed after retries: {e}", flush=True)
         print("WARN: Skipping README sync failure (image already pushed).", flush=True)
-        return 0
+        return 1 if args.strict else 0
 
     if response.status_code in (200, 201):
         print("✓ Docker Hub README updated successfully", flush=True)
@@ -288,7 +294,7 @@ def main() -> int:
     print(f"Response: {response.text}", flush=True)
     if response.status_code in (401, 403):
         return 1
-    return 0
+    return 1 if args.strict else 0
 
 
 if __name__ == "__main__":

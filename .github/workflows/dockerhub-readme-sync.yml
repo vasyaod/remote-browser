@@ -1,0 +1,41 @@
+name: Sync Docker Hub README
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Daily retry to eventually sync when Docker Hub API is healthy
+    - cron: "17 3 * * *"
+
+env:
+  DOCKERHUB_USERNAME: vasiliiv
+  IMAGE_NAME: remote-browser
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Sync README to Docker Hub (strict)
+        run: |
+          python3 scripts/dockerhub_sync_readme.py --readme README.md --strict
+        env:
+          DOCKERHUB_USERNAME: ${{ env.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+
+
