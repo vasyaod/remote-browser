@@ -1,4 +1,4 @@
-# Headless Browser (Chromium)
+# Remote Browser (Chromium) with VNC access
 
 Docker container with headless Chromium browser, VNC access, and remote debugging capabilities.
 
@@ -20,10 +20,10 @@ Docker container with headless Chromium browser, VNC access, and remote debuggin
 
 ```bash
 docker run -d \
-  --name headless-browser \
+  --name remote-browser \
   -p 9222:9222 \
   -p 5900:5900 \
-  <docker-hub-username>/headless-browser:latest
+  vasiliiv/remote-browser:latest
 ```
 
 ### Connect via VNC
@@ -34,11 +34,11 @@ You can set a VNC password using the `VNC_PASSWORD` environment variable:
 
 ```bash
 docker run -d \
-  --name headless-browser \
+  --name remote-browser \
   -p 9222:9222 \
   -p 5900:5900 \
   -e VNC_PASSWORD=yourpassword \
-  <docker-hub-username>/headless-browser:latest
+  vasiliiv/remote-browser:latest
 ```
 
 ### Connect via Chrome DevTools
