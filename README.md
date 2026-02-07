@@ -12,7 +12,8 @@ Docker container with headless Chromium browser, VNC access, and remote debuggin
 ## Ports
 
 - **9222**: Chrome remote debugging port
-- **5900**: VNC server port
+- **5900**: VNC server port (raw VNC)
+- **6080**: VNC over HTTP (noVNC web client)
 
 ## Usage
 
@@ -23,12 +24,26 @@ docker run -d \
   --name remote-browser \
   -p 9222:9222 \
   -p 5900:5900 \
+  -p 6080:6080 \
   vasiliiv/remote-browser:latest
 ```
 
 ### Connect via VNC
 
+#### VNC over HTTP (Recommended)
+
+Access VNC through your web browser at:
+```
+http://localhost:6080
+```
+
+This uses noVNC, a web-based VNC client that works in any modern browser.
+
+#### Traditional VNC Client
+
 Use any VNC client to connect to `localhost:5900` (no password required by default).
+
+#### VNC Password
 
 You can set a VNC password using the `VNC_PASSWORD` environment variable:
 
@@ -37,6 +52,7 @@ docker run -d \
   --name remote-browser \
   -p 9222:9222 \
   -p 5900:5900 \
+  -p 6080:6080 \
   -e VNC_PASSWORD=yourpassword \
   vasiliiv/remote-browser:latest
 ```
@@ -65,6 +81,7 @@ The container runs Chromium with:
 
 - `VNC_PASSWORD`: Set a password for VNC access (optional)
 - `VNC_RESOLUTION`: Set the display resolution (default: `1920x1080x24`)
+- `VNC_HTTP_PORT`: Set the port for VNC over HTTP (default: `6080`)
 - `SESSION_DATA_PATH`: Set the path for Chrome user data directory (default: `/session-data`)
 
 ## Kubernetes Deployment

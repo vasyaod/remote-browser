@@ -37,6 +37,16 @@ fi
 
 sleep 1
 
+# Start websockify for VNC over HTTP (noVNC)
+VNC_HTTP_PORT=${VNC_HTTP_PORT:-6080}
+VNC_INTERNAL_PORT=5900
+echo "Starting websockify on port ${VNC_HTTP_PORT} for VNC over HTTP..."
+websockify --web=/usr/share/novnc ${VNC_HTTP_PORT} localhost:${VNC_INTERNAL_PORT} &
+WEBSOCKIFY_PID=$!
+echo "Websockify started with PID: $WEBSOCKIFY_PID (VNC accessible via HTTP on port ${VNC_HTTP_PORT})"
+
+sleep 1
+
 # Start Chrome/Chromium with remote debugging on loopback-only internal port
 INTERNAL_DEBUG_PORT=9223
 EXTERNAL_DEBUG_PORT=9222

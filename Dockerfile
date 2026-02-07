@@ -34,8 +34,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrandr2 \
     libu2f-udev \
     libvulkan1 \
+    python3 \
+    python3-pip \
+    python3-numpy \
     && rm -rf /var/lib/apt/lists/* \
-    && ln -sf /usr/bin/chromium /usr/local/bin/chrome
+    && ln -sf /usr/bin/chromium /usr/local/bin/chrome \
+    && pip3 install --no-cache-dir websockify \
+    && curl -L https://github.com/novnc/noVNC/archive/v1.4.0.tar.gz | tar -xz -C /tmp \
+    && mv /tmp/noVNC-1.4.0 /usr/share/novnc \
+    && ln -s /usr/share/novnc/vnc.html /usr/share/novnc/index.html
 
 # Copy startup script
 COPY start.sh /start.sh
@@ -44,12 +51,14 @@ RUN chmod +x /start.sh
 # Expose ports
 # 9222: Chrome remote debugging
 # 5900: VNC server
-EXPOSE 9222 5900
+# 6080: VNC over HTTP (noVNC)
+EXPOSE 9222 5900 6080
 
 # Set environment variables
 ENV DISPLAY=:99
 ENV VNC_RESOLUTION=1920x1080x24
 ENV SESSION_DATA_PATH=/session-data
+ENV VNC_HTTP_PORT=6080
 
 # Use startup script
 CMD ["/start.sh"]
