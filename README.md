@@ -73,6 +73,86 @@ curl -u token:mytoken123 http://localhost:9222/json
 curl -u :mytoken123 http://localhost:9222/json
 ```
 
+### Connect via Playwright
+
+You can control the browser programmatically using Playwright via Chrome DevTools Protocol:
+
+**Without authentication:**
+```python
+from playwright.sync_api import sync_playwright
+
+with sync_playwright() as p:
+    # Connect to the remote browser
+    browser = p.chromium.connect_over_cdp("http://localhost:9222")
+    
+    # Get existing context or create a new one
+    contexts = browser.contexts
+    if contexts:
+        context = contexts[0]
+    else:
+        context = browser.new_context()
+    
+    # Create a new page
+    page = context.new_page()
+    
+    # Navigate and interact
+    page.goto("https://www.google.com")
+    print(f"Page title: {page.title()}")
+    
+    # Close page and browser
+    page.close()
+    browser.close()
+```
+
+**With authentication token:**
+```python
+from playwright.sync_api import sync_playwright
+import os
+
+# Set token as environment variable or use directly
+devtools_token = os.environ.get("DEVTOOLS_TOKEN", "mytoken123")
+
+with sync_playwright() as p:
+    # Connect with authentication
+    cdp_url = f"http://token:{devtools_token}@localhost:9222"
+    browser = p.chromium.connect_over_cdp(cdp_url)
+    
+    # Get existing context or create a new one
+    contexts = browser.contexts
+    if contexts:
+        context = contexts[0]
+    else:
+        context = browser.new_context()
+    
+    # Create a new page
+    page = context.new_page()
+    
+    # Navigate and interact
+    page.goto("https://www.google.com")
+    print(f"Page title: {page.title()}")
+    
+    # Close page and browser
+    page.close()
+    browser.close()
+```
+
+**Example: Taking a screenshot:**
+```python
+from playwright.sync_api import sync_playwright
+
+with sync_playwright() as p:
+    browser = p.chromium.connect_over_cdp("http://localhost:9222")
+    contexts = browser.contexts
+    context = contexts[0] if contexts else browser.new_context()
+    page = context.new_page()
+    
+    page.goto("https://www.example.com")
+    page.screenshot(path="screenshot.png")
+    
+    page.close()
+    browser.close()
+```
+
 ## Chromium Parameters
 
 The container runs Chromium with:
