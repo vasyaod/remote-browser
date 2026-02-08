@@ -153,6 +153,8 @@ with sync_playwright() as p:
     browser.close()
 ```
 
+For a complete working example, see [examples/playwright_example.py](examples/playwright_example.py).
+
 ## Chromium Parameters
 
 The container runs Chromium with:
