@@ -5,6 +5,7 @@ Tests browser functionality using Playwright via Chrome DevTools Protocol.
 """
 import pytest
 import time
+import os
 from playwright.sync_api import sync_playwright
 
 
@@ -18,8 +19,20 @@ def wait_for_services():
 def browser_connection(wait_for_services):
     """Connect to remote browser via Chrome DevTools Protocol."""
     with sync_playwright() as p:
+        # Get DevTools token from environment variable (optional)
+        devtools_token = os.environ.get("DEVTOOLS_TOKEN")
+        
+        # Build CDP URL with authentication if token is provided
+        if devtools_token:
+            # Use Basic Auth: http://username:password@host:port
+            # We use "token" as username and the token as password
+            cdp_url = f"http://token:{devtools_token}@localhost:9222"
+        else:
+            # No authentication if token is not set
+            cdp_url = "http://localhost:9222"
+        
         # Connect to the remote browser via CDP
-        browser = p.chromium.connect_over_cdp("http://localhost:9222")
+        browser = p.chromium.connect_over_cdp(cdp_url)
         yield browser
         browser.close()
 

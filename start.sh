@@ -65,8 +65,18 @@ start_chromium() {
 # Start Chromium
 start_chromium
 
-# Expose DevTools externally via TCP forwarder (9222 -> 127.0.0.1:9223)
-socat TCP-LISTEN:${EXTERNAL_DEBUG_PORT},fork,reuseaddr,bind=0.0.0.0 TCP:127.0.0.1:${INTERNAL_DEBUG_PORT} &
+# Expose DevTools externally via HTTP proxy with optional authentication
+if [ -n "$DEVTOOLS_TOKEN" ]; then
+  echo "Starting DevTools proxy with authentication..."
+  export INTERNAL_DEBUG_HOST=127.0.0.1
+  export INTERNAL_DEBUG_PORT=${INTERNAL_DEBUG_PORT}
+  export EXTERNAL_DEBUG_PORT=${EXTERNAL_DEBUG_PORT}
+  python3 /devtools_proxy.py &
+else
+  echo "Starting DevTools proxy without authentication (using socat)..."
+  # Fallback to socat if no token is set (backward compatible)
+  socat TCP-LISTEN:${EXTERNAL_DEBUG_PORT},fork,reuseaddr,bind=0.0.0.0 TCP:127.0.0.1:${INTERNAL_DEBUG_PORT} &
+fi
 
 # Monitor Chromium and restart if it exits
 while true; do

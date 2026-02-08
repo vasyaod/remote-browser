@@ -5,6 +5,7 @@ Tests that all required ports are accessible and responding correctly.
 """
 import socket
 import time
+import os
 import requests
 import pytest
 import subprocess
@@ -27,9 +28,18 @@ def test_port_9222_chrome_devtools(container_name, wait_for_services):
     max_attempts = 30
     attempt = 0
     
+    # Get DevTools token from environment variable (optional)
+    devtools_token = os.environ.get("DEVTOOLS_TOKEN")
+    
+    # Prepare auth if token is provided
+    auth = None
+    if devtools_token:
+        from requests.auth import HTTPBasicAuth
+        auth = HTTPBasicAuth('token', devtools_token)
+    
     while attempt < max_attempts:
         try:
-            response = requests.get("http://localhost:9222/json", timeout=2)
+            response = requests.get("http://localhost:9222/json", timeout=2, auth=auth)
             assert response.status_code == 200, f"Expected 200, got {response.status_code}"
             assert len(response.json()) >= 0, "Response should be valid JSON"
             print(f"✓ Port 9222 is accessible")

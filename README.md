@@ -53,6 +53,26 @@ Or use Chrome DevTools Protocol:
 curl http://localhost:9222/json
 ```
 
+You can set a token/password for Chrome DevTools port 9222 using the `DEVTOOLS_TOKEN` environment variable:
+
+```bash
+docker run -d \
+  --name remote-browser \
+  -p 9222:9222 \
+  -p 5900:5900 \
+  -e DEVTOOLS_TOKEN=mytoken123 \
+  vasiliiv/remote-browser:latest
+```
+
+When a token is set, access requires HTTP Basic Authentication:
+```bash
+# Using curl with Basic Auth
+curl -u token:mytoken123 http://localhost:9222/json
+
+# Or with empty username
+curl -u :mytoken123 http://localhost:9222/json
+```
+
 ## Chromium Parameters
 
 The container runs Chromium with:
@@ -64,6 +84,7 @@ The container runs Chromium with:
 ## Environment Variables
 
 - `VNC_PASSWORD`: Set a password for VNC access (optional)
+- `DEVTOOLS_TOKEN`: Set a token/password for Chrome DevTools port 9222 (optional)
 - `VNC_RESOLUTION`: Set the display resolution (default: `1920x1080x24`)
 - `SESSION_DATA_PATH`: Set the path for Chrome user data directory (default: `/session-data`)
 

@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fluxbox \
     curl \
     socat \
+    python3 \
     ca-certificates \
     fonts-liberation \
     fonts-dejavu \
@@ -37,9 +38,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/chromium /usr/local/bin/chrome
 
-# Copy startup script
+# Copy startup script and proxy
 COPY start.sh /start.sh
-RUN chmod +x /start.sh
+COPY devtools_proxy.py /devtools_proxy.py
+RUN chmod +x /start.sh /devtools_proxy.py
 
 # Expose ports
 # 9222: Chrome remote debugging
