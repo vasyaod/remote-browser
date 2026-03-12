@@ -56,7 +56,7 @@ start_chromium() {
   # --disable-background-timer-throttling prevents background throttling
   # --disable-backgrounding-occluded-windows prevents window backgrounding
   # --disable-renderer-backgrounding prevents renderer backgrounding
-  /usr/local/bin/chrome --remote-debugging-port=${INTERNAL_DEBUG_PORT} --remote-debugging-address=127.0.0.1 --remote-allow-origins=* --user-data-dir="${SESSION_DATA_PATH}" --no-sandbox --disable-dev-shm-usage --start-maximized --window-size=1920,1080 --new-window about:blank --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding 2>&1 &
+  /usr/local/bin/chrome --remote-debugging-port=${INTERNAL_DEBUG_PORT} --remote-debugging-address=127.0.0.1 --remote-allow-origins=* --user-data-dir="${SESSION_DATA_PATH}" --disable-dev-shm-usage --start-maximized --window-size=1920,1080 --new-window about:blank --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding ${EXTRA_BROWSER_PARAMS} 2>&1 &
   CHROMIUM_PID=$!
   echo $CHROMIUM_PID > /tmp/chromium.pid
   echo "Chromium started with PID: $CHROMIUM_PID"

@@ -160,8 +160,9 @@ For a complete working example, see [examples/playwright_example.py](examples/pl
 The container runs Chromium with:
 - `--remote-debugging-port=9222`: Enables Chrome DevTools Protocol
 - `--user-data-dir="/session-data"`: Persistent user data directory
-- `--no-sandbox`: Required for running in containers
 - `--disable-dev-shm-usage`: Prevents shared memory issues
+
+Use `EXTRA_BROWSER_PARAMS` to pass additional Chrome flags (e.g. `--no-sandbox` for some container environments).
 
 ## Environment Variables
 
@@ -169,6 +170,7 @@ The container runs Chromium with:
 - `DEVTOOLS_TOKEN`: Set a token/password for Chrome DevTools port 9222 (optional)
 - `VNC_RESOLUTION`: Set the display resolution (default: `1920x1080x24`)
 - `SESSION_DATA_PATH`: Set the path for Chrome user data directory (default: `/session-data`)
+- `EXTRA_BROWSER_PARAMS`: Additional Chrome/Chromium command-line arguments (optional, e.g. `--no-sandbox` for container environments)
 
 ## Kubernetes Deployment
 
