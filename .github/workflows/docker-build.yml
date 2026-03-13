@@ -61,15 +61,19 @@ jobs:
             type=semver,pattern={{major}}
 
       - name: Build Docker image (for testing)
-        uses: docker/build-push-action@v5
+        uses: nick-fields/retry@v3
         with:
-          context: .
-          platforms: linux/amd64
-          push: false
-          tags: test-remote-browser:latest
-          load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          timeout_minutes: 10
+          max_attempts: 3
+          retry_wait_seconds: 30
+          command: |
+            docker buildx build \
+              --platform linux/amd64 \
+              --load \
+              --tag test-remote-browser:latest \
+              --cache-from type=gha \
+              --cache-to type=gha,mode=max \
+              .
 
       - name: Set up Python
         uses: actions/setup-python@v5
