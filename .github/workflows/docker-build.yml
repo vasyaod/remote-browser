@@ -122,12 +122,13 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Update Docker Hub README
-        if: github.event_name != 'pull_request'
-        uses: peter-evans/dockerhub-description@v4
-        with:
-          username: ${{ env.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
-          readme-filepath: README.md
+      # Temporarily disabled: Forbidden when updating Docker Hub description
+      # - name: Update Docker Hub README
+      #   if: github.event_name != 'pull_request'
+      #   uses: peter-evans/dockerhub-description@v4
+      #   with:
+      #     username: ${{ env.DOCKERHUB_USERNAME }}
+      #     password: ${{ secrets.DOCKERHUB_TOKEN }}
+      #     repository: ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
+      #     readme-filepath: README.md
 
