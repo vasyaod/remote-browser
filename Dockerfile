@@ -7,6 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # We intentionally use Debian because Ubuntu's `chromium-browser` is a snap wrapper.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium \
+    chromium-sandbox \
     xvfb \
     x11vnc \
     fluxbox \

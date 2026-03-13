@@ -87,6 +87,7 @@ jobs:
             -p 9222:9222 \
             -p 5900:5900 \
             -e VNC_PASSWORD=testpass123 \
+            -e "EXTRA_BROWSER_PARAMS=--no-sandbox" \
             test-remote-browser:latest
 
       - name: Run port tests
