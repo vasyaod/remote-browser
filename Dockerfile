@@ -43,6 +43,14 @@ COPY start.sh /start.sh
 COPY devtools_proxy.py /devtools_proxy.py
 RUN chmod +x /start.sh /devtools_proxy.py
 
+# Create non-root user for Chromium (enables sandbox, no --no-sandbox needed)
+RUN useradd -m -u 1000 -s /bin/bash browser \
+    && mkdir -p /session-data \
+    && chown -R browser:browser /session-data
+
+# Run as non-root user
+USER browser
+
 # Expose ports
 # 9222: Chrome remote debugging
 # 5900: VNC server
