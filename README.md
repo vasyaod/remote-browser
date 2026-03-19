@@ -1,5 +1,9 @@
 # Remote Browser (Chromium) with VNC access
 
+[![docker pulls](https://img.shields.io/docker/pulls/vasiliiv/remote-browser)](https://hub.docker.com/r/vasiliiv/remote-browser)
+[![docker stars](https://img.shields.io/docker/stars/vasiliiv/remote-browser)](https://hub.docker.com/r/vasiliiv/remote-browser)
+[![build](https://github.com/vasyaod/remote-browser/actions/workflows/docker-build.yml/badge.svg)](https://github.com/vasyaod/remote-browser/actions/workflows/docker-build.yml)
+
 Docker container with headless Chromium browser, VNC access, and remote debugging capabilities.
 
 ## Features
