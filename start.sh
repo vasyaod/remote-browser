@@ -21,6 +21,10 @@ done
 # Start fluxbox window manager
 fluxbox &
 sleep 2
+# Fluxbox may spawn a wallpaper warning popup via xmessage when no setter is
+# installed; it can cover the fullscreen Chromium window and make kiosk mode
+# appear broken.
+pkill -x xmessage >/dev/null 2>&1 || true
 
 # Start VNC server with password if provided
 if [ -n "$VNC_PASSWORD" ]; then
