@@ -18,6 +18,18 @@ for i in {1..30}; do
   sleep 1
 done
 
+# Force every window to map maximized so a popup (e.g. OAuth/sign-in opened via
+# window.open) overlays the main window full-screen instead of tiling beside it.
+# This guarantees a single full-viewport window in the VNC view — never a split.
+mkdir -p ~/.fluxbox
+cat > ~/.fluxbox/apps <<'APPS'
+[app] (name=.*)
+  [Maximized] {yes}
+  [Deco] {NONE}
+  [Layer] {2}
+[end]
+APPS
+
 # Start fluxbox window manager
 fluxbox &
 sleep 2
