@@ -53,6 +53,34 @@ fi
 
 sleep 1
 
+# Start the profile agent so the orchestrator can push/pull the Chrome profile
+# (plaintext tar.gz; the service owns S3 + encryption). Must be up before Chrome
+# so a restore can land BEFORE Chrome opens the profile.
+rm -f /tmp/profile_ready
+echo "Starting profile agent..."
+python3 /profile_agent.py &
+PROFILE_AGENT_PID=$!
+
+# When the orchestrator intends to restore a saved profile it sets PROFILE_RESTORE=1
+# and PUTs the profile to the agent. Wait for the agent to extract it (it touches
+# /tmp/profile_ready) before launching Chrome, so Chrome boots the restored profile.
+# Legacy sessions leave PROFILE_RESTORE unset -> launch immediately (the service
+# then restores via the older CDP path).
+PROFILE_RESTORE_TIMEOUT=${PROFILE_RESTORE_TIMEOUT:-45}
+if [ "${PROFILE_RESTORE:-0}" = "1" ]; then
+  echo "PROFILE_RESTORE=1: waiting up to ${PROFILE_RESTORE_TIMEOUT}s for profile push..."
+  for i in $(seq 1 "${PROFILE_RESTORE_TIMEOUT}"); do
+    if [ -f /tmp/profile_ready ]; then
+      echo "Profile restored after ${i}s; launching Chromium"
+      break
+    fi
+    sleep 1
+  done
+  if [ ! -f /tmp/profile_ready ]; then
+    echo "Profile not pushed within ${PROFILE_RESTORE_TIMEOUT}s; launching Chromium with empty profile"
+  fi
+fi
+
 # Start Chrome/Chromium with remote debugging on loopback-only internal port
 INTERNAL_DEBUG_PORT=9223
 EXTERNAL_DEBUG_PORT=9222

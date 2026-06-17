@@ -42,7 +42,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy startup script and proxy
 COPY start.sh /start.sh
 COPY devtools_proxy.py /devtools_proxy.py
-RUN chmod +x /start.sh /devtools_proxy.py
+COPY profile_agent.py /profile_agent.py
+RUN chmod +x /start.sh /devtools_proxy.py /profile_agent.py
 
 # Create non-root user for Chromium (enables sandbox, no --no-sandbox needed)
 RUN useradd -m -u 1000 -s /bin/bash browser \
@@ -55,7 +56,8 @@ USER browser
 # Expose ports
 # 9222: Chrome remote debugging
 # 5900: VNC server
-EXPOSE 9222 5900
+# 9224: profile agent (orchestrator push/pull of the Chrome profile)
+EXPOSE 9222 5900 9224
 
 # Set environment variables
 ENV DISPLAY=:99
