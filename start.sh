@@ -122,8 +122,15 @@ else
   socat TCP-LISTEN:${EXTERNAL_DEBUG_PORT},fork,reuseaddr,bind=0.0.0.0 TCP:127.0.0.1:${INTERNAL_DEBUG_PORT} &
 fi
 
-# Monitor Chromium and restart if it exits
+# Monitor Chromium and restart if it exits — UNLESS /tmp/no_restart is present,
+# which the profile agent creates when it gracefully quiesces Chrome to take a
+# consistent profile snapshot just before pod teardown. Respawning then would
+# re-dirty the profile mid-tar, so honor the flag and leave Chrome down.
 while true; do
+  if [ -f /tmp/no_restart ]; then
+    sleep 5
+    continue
+  fi
   if [ -f /tmp/chromium.pid ]; then
     CHROMIUM_PID=$(cat /tmp/chromium.pid)
     if ! kill -0 $CHROMIUM_PID 2>/dev/null; then

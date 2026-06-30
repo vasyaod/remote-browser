@@ -18,14 +18,27 @@ Auth: if PROFILE_TOKEN (or DEVTOOLS_TOKEN) is set, requests must carry
 ``Authorization: Bearer <token>``. In-cluster only; same trust model as the CDP port.
 """
 import os
+import signal
+import time
 import subprocess
 import http.server
 import socketserver
+from urllib.parse import urlparse, parse_qs
 
 SESSION_DATA_PATH = os.environ.get("SESSION_DATA_PATH", "/session-data")
 PORT = int(os.environ.get("PROFILE_AGENT_PORT", "9224"))
 TOKEN = os.environ.get("PROFILE_TOKEN") or os.environ.get("DEVTOOLS_TOKEN") or ""
 READY_FLAG = "/tmp/profile_ready"
+
+# Set by start.sh; holds the main Chromium PID. Used to gracefully quiesce Chrome
+# before a snapshot so cookies (incl. fast-rotating ones like Google's
+# __Secure-1PSIDTS) are flushed to the on-disk SQLite store and the WAL is
+# checkpointed — otherwise a live tar can capture a stale/inconsistent cookie DB.
+CHROMIUM_PID_FILE = "/tmp/chromium.pid"
+# Touching this stops start.sh's monitor from respawning Chromium, so it stays down
+# while we snapshot. We only quiesce right before pod teardown, so this is terminal.
+NO_RESTART_FLAG = "/tmp/no_restart"
+QUIESCE_TIMEOUT_S = int(os.environ.get("PROFILE_QUIESCE_TIMEOUT_S", "12"))
 
 # Runtime lock files that record the owning process/host. If restored, Chrome
 # thinks the profile is "in use by another Chromium process on another computer"
@@ -68,21 +81,57 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
-        if self.path == "/health":
+        parsed = urlparse(self.path)
+        if parsed.path == "/health":
             body = b"ok"
             self.send_response(200)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
             return
-        if self.path == "/profile":
+        if parsed.path == "/profile":
             if not self._authed():
                 return self._deny()
+            qs = parse_qs(parsed.query)
+            if qs.get("quiesce", ["0"])[0] in ("1", "true", "yes"):
+                self._quiesce_chrome()
             self._stream_profile()
             return
         self.send_response(404)
         self.send_header("Content-Length", "0")
         self.end_headers()
+
+    def _quiesce_chrome(self):
+        """Gracefully stop Chrome so the on-disk profile is flushed & consistent
+        before the tar. Disables start.sh's respawn monitor first so Chrome can't
+        relaunch mid-snapshot. Best-effort; never raises."""
+        try:
+            open(NO_RESTART_FLAG, "w").close()
+        except Exception:
+            pass
+        pid = None
+        try:
+            with open(CHROMIUM_PID_FILE) as f:
+                pid = int(f.read().strip())
+        except Exception:
+            pid = None
+        if not pid:
+            return
+        try:
+            os.kill(pid, signal.SIGTERM)  # graceful: Chrome flushes cookies + checkpoints SQLite
+        except ProcessLookupError:
+            return
+        except Exception:
+            return
+        deadline = time.time() + QUIESCE_TIMEOUT_S
+        while time.time() < deadline:
+            try:
+                os.kill(pid, 0)  # still alive?
+            except Exception:
+                break
+            time.sleep(0.2)
+        # Small beat so the kernel finishes flushing the final writes to disk.
+        time.sleep(0.3)
 
     def do_PUT(self):
         if self.path != "/profile":
