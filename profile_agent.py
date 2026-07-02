@@ -13,13 +13,23 @@ Endpoints (bound on PROFILE_AGENT_PORT, default 9224):
                             SESSION_DATA_PATH, then /tmp/profile_ready is touched
                             so start.sh knows it may launch Chrome (restore done)
   GET  /profile          -> streams a tar.gz of SESSION_DATA_PATH (caches excluded)
+  PUT  /upload?name=<fn> -> writes the request body (raw file bytes) to a temp file
+                            on the browser host and returns JSON {"path": "..."} so
+                            the orchestrator can hand that host path to CDP
+                            DOM.setFileInputFiles. This lets file uploads run over the
+                            service's own (clean) CDP connection instead of an external
+                            CDP attach — the latter trips anti-bot captchas on hardened
+                            sites. Chrome shares this container's filesystem, so a path
+                            written here is directly readable by the browser.
 
 Auth: if PROFILE_TOKEN (or DEVTOOLS_TOKEN) is set, requests must carry
 ``Authorization: Bearer <token>``. In-cluster only; same trust model as the CDP port.
 """
 import os
+import json
 import signal
 import time
+import uuid
 import subprocess
 import http.server
 import socketserver
@@ -29,6 +39,13 @@ SESSION_DATA_PATH = os.environ.get("SESSION_DATA_PATH", "/session-data")
 PORT = int(os.environ.get("PROFILE_AGENT_PORT", "9224"))
 TOKEN = os.environ.get("PROFILE_TOKEN") or os.environ.get("DEVTOOLS_TOKEN") or ""
 READY_FLAG = "/tmp/profile_ready"
+
+# Temp dir for files uploaded via PUT /upload (for CDP DOM.setFileInputFiles). Kept
+# out of SESSION_DATA_PATH so uploads are never captured into the persisted profile.
+UPLOAD_DIR = os.environ.get("PROFILE_UPLOAD_DIR", "/tmp/rb-uploads")
+# Hard cap on a single uploaded file (browser photo uploads are a few MB). Guards the
+# pod's ephemeral disk against a runaway/hostile body. Default 32 MiB.
+UPLOAD_MAX_BYTES = int(os.environ.get("PROFILE_UPLOAD_MAX_BYTES", str(32 * 1024 * 1024)))
 
 # Set by start.sh; holds the main Chromium PID. Used to gracefully quiesce Chrome
 # before a snapshot so cookies (incl. fast-rotating ones like Google's
@@ -134,7 +151,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         time.sleep(0.3)
 
     def do_PUT(self):
-        if self.path != "/profile":
+        parsed = urlparse(self.path)
+        if parsed.path == "/upload":
+            if not self._authed():
+                return self._deny()
+            self._receive_upload(parse_qs(parsed.query))
+            return
+        if parsed.path != "/profile":
             self.send_response(404)
             self.send_header("Content-Length", "0")
             self.end_headers()
@@ -142,6 +165,54 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not self._authed():
             return self._deny()
         self._extract_profile()
+
+    def _receive_upload(self, qs):
+        """Stream the request body to a temp file on the browser host and return its
+        absolute path as JSON. The orchestrator passes that path to CDP
+        DOM.setFileInputFiles over its own clean connection (no external CDP attach).
+
+        Filename is taken from ?name= (sanitized to a bare basename); the file lands
+        in a per-upload uuid subdir so distinct uploads never collide. Enforces
+        UPLOAD_MAX_BYTES; over-large or malformed bodies are rejected (413/400)."""
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        if length <= 0:
+            return self._json(400, {"error": "empty body"})
+        if length > UPLOAD_MAX_BYTES:
+            return self._json(413, {"error": f"file exceeds {UPLOAD_MAX_BYTES} bytes"})
+        raw_name = (qs.get("name", ["upload"])[0] or "upload").strip()
+        # Reduce to a bare basename so a client can't write outside UPLOAD_DIR.
+        safe_name = os.path.basename(raw_name).replace("\x00", "") or "upload"
+        dest_dir = os.path.join(UPLOAD_DIR, uuid.uuid4().hex)
+        try:
+            os.makedirs(dest_dir, exist_ok=True)
+            dest = os.path.join(dest_dir, safe_name)
+            remaining = length
+            written = 0
+            with open(dest, "wb") as f:
+                while remaining > 0:
+                    chunk = self.rfile.read(min(65536, remaining))
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    written += len(chunk)
+                    remaining -= len(chunk)
+            if written != length:
+                try:
+                    os.remove(dest)
+                except OSError:
+                    pass
+                return self._json(400, {"error": "incomplete upload"})
+        except Exception as e:
+            return self._json(500, {"error": f"write failed: {e}"})
+        return self._json(200, {"path": dest, "bytes": written})
+
+    def _json(self, status, obj):
+        body = json.dumps(obj).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def _stream_profile(self):
         """tar.gz SESSION_DATA_PATH (minus caches) to the response body."""
