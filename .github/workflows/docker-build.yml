@@ -87,11 +87,7 @@ jobs:
       - name: Start test container
         run: |
           echo "Starting container with VNC password..."
-          # The huge nofile limit reproduces what containerd/runc hand production
-          # pods; without start.sh's x11vnc ulimit cap the banner test below
-          # times out because libvncserver fcntl()s a billion fds per connection.
           docker run -d --name test-remote-browser \
-            --ulimit nofile=1073741816:1073741816 \
             -p 9222:9222 \
             -p 5900:5900 \
             -e VNC_PASSWORD=testpass123 \

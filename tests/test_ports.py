@@ -119,3 +119,32 @@ def test_vnc_password_authentication(container_name, wait_for_services):
     finally:
         sock.close()
 
+
+
+def test_x11vnc_runs_under_a_small_nofile_limit(container_name, wait_for_services):
+    """start.sh must start x11vnc with a small soft RLIMIT_NOFILE.
+
+    libvncserver's rfbProcessNewConnection() fcntl()s every fd from 0 to the soft
+    limit before accepting a client; with the ~1e9 limit production pods inherit
+    that is minutes per connection and VNC hangs at "Connecting...". The hosted
+    runner's dockerd can't grant such a limit, so pin the mechanism instead:
+    the running x11vnc's soft limit is the capped one, not the inherited one.
+    """
+    pid = subprocess.run(
+        ["docker", "exec", container_name, "cat", "/tmp/x11vnc.pid"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    assert pid.isdigit(), f"x11vnc pid file missing/odd: {pid!r}"
+    limits = subprocess.run(
+        ["docker", "exec", container_name, "cat", f"/proc/{pid}/limits"],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    line = next(l for l in limits.splitlines() if l.startswith("Max open files"))
+    soft = int(line.split()[3])
+    print(f"x11vnc pid {pid} nofile: {line}")
+    assert soft <= 4096, f"x11vnc soft nofile should be capped (got {soft})"
+    cmd = subprocess.run(
+        ["docker", "exec", container_name, "cat", f"/proc/{pid}/cmdline"],
+        capture_output=True, text=True, check=True,
+    ).stdout.replace("\0", " ")
+    assert cmd.startswith("x11vnc"), f"pid file does not point at x11vnc: {cmd!r}"
