@@ -175,6 +175,7 @@ Use `EXTRA_BROWSER_PARAMS` to pass additional Chrome flags if needed.
 - `VNC_PASSWORD`: Set a password for VNC access (optional)
 - `DEVTOOLS_TOKEN`: Set a token/password for Chrome DevTools port 9222 (optional)
 - `VNC_RESOLUTION`: Set the display resolution (default: `1920x1080x24`)
+- `VNC_WATCHDOG_INTERVAL`: Seconds between in-container checks that x11vnc still sends its `RFB` banner on 5900 (default: `20`). Two misses in a row log the process state (`[vnc-watchdog] ...`) and restart x11vnc.
 - `SESSION_DATA_PATH`: Set the path for Chrome user data directory (default: `/session-data`)
 - `EXTRA_BROWSER_PARAMS`: Additional Chrome/Chromium command-line arguments (optional)
 

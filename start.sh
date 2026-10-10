@@ -39,17 +39,70 @@ sleep 2
 pkill -x xmessage >/dev/null 2>&1 || true
 
 # Start VNC server with password if provided
-if [ -n "$VNC_PASSWORD" ]; then
-  echo "Setting up VNC password..."
-  mkdir -p /tmp/.vnc
-  x11vnc -storepasswd "$VNC_PASSWORD" /tmp/.vnc/passwd 2>/dev/null || true
-  chmod 600 /tmp/.vnc/passwd
-  x11vnc -display :99 -forever -shared -rfbauth /tmp/.vnc/passwd -rfbport 5900 &
-  echo "VNC server started with password authentication"
-else
-  x11vnc -display :99 -forever -shared -nopw -rfbport 5900 &
-  echo "VNC server started without password"
-fi
+start_x11vnc() {
+  if [ -n "$VNC_PASSWORD" ]; then
+    echo "Setting up VNC password..."
+    mkdir -p /tmp/.vnc
+    x11vnc -storepasswd "$VNC_PASSWORD" /tmp/.vnc/passwd 2>/dev/null || true
+    chmod 600 /tmp/.vnc/passwd
+    x11vnc -display :99 -forever -shared -rfbauth /tmp/.vnc/passwd -rfbport 5900 &
+    echo $! > /tmp/x11vnc.pid
+    echo "VNC server started with password authentication"
+  else
+    x11vnc -display :99 -forever -shared -nopw -rfbport 5900 &
+    echo $! > /tmp/x11vnc.pid
+    echo "VNC server started without password"
+  fi
+}
+start_x11vnc
+
+# A VNC server that accepts TCP but never sends the "RFB 003.008" banner is a
+# wedged x11vnc: the port looks open, every viewer sits at "Connecting...", and
+# nothing in the pod says why. Probe the banner from inside and restart x11vnc
+# when it stops answering, logging where the old process was stuck first.
+vnc_responds() {
+  timeout 8 bash -c '
+    exec 3<>/dev/tcp/127.0.0.1/5900 || exit 1
+    IFS= read -r -t 5 -n 12 banner <&3
+    exec 3>&-
+    [[ "$banner" == RFB* ]]
+  ' 2>/dev/null
+}
+
+x11vnc_diag() {
+  local pid
+  pid=$(cat /tmp/x11vnc.pid 2>/dev/null)
+  echo "[vnc-watchdog] x11vnc pid=${pid:-?}" \
+    "state=$(grep -E '^State' "/proc/$pid/status" 2>/dev/null | tr -s '\t ' ' ')" \
+    "wchan=$(cat "/proc/$pid/wchan" 2>/dev/null)" \
+    "syscall=$(cut -d' ' -f1 "/proc/$pid/syscall" 2>/dev/null)" \
+    "threads=$(ls "/proc/$pid/task" 2>/dev/null | wc -l)" \
+    "fds=$(ls "/proc/$pid/fd" 2>/dev/null | wc -l)"
+}
+
+VNC_WATCHDOG_INTERVAL=${VNC_WATCHDOG_INTERVAL:-20}
+(
+  sleep 5
+  strikes=0
+  while true; do
+    if vnc_responds; then
+      strikes=0
+    else
+      strikes=$((strikes + 1))
+      echo "[vnc-watchdog] no RFB banner on 127.0.0.1:5900 (strike $strikes)"
+      x11vnc_diag
+      if [ "$strikes" -ge 2 ]; then
+        echo "[vnc-watchdog] restarting x11vnc"
+        kill -9 "$(cat /tmp/x11vnc.pid 2>/dev/null)" 2>/dev/null || true
+        sleep 1
+        start_x11vnc
+        strikes=0
+      fi
+    fi
+    sleep "$VNC_WATCHDOG_INTERVAL"
+  done
+) &
+VNC_WATCHDOG_PID=$!
 
 sleep 1
 
