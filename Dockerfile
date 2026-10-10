@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fluxbox \
     curl \
     socat \
+    elfutils \
     python3 \
     ca-certificates \
     fonts-liberation \

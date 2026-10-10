@@ -38,23 +38,24 @@ sleep 2
 # appear broken.
 pkill -x xmessage >/dev/null 2>&1 || true
 
-# Start VNC server with password if provided
+# Start VNC server with password if provided.
+# X11VNC_EXTRA_ARGS lets an operator try x11vnc flags (e.g. -noxdamage) without
+# rebuilding the image.
 start_x11vnc() {
   if [ -n "$VNC_PASSWORD" ]; then
     echo "Setting up VNC password..."
     mkdir -p /tmp/.vnc
     x11vnc -storepasswd "$VNC_PASSWORD" /tmp/.vnc/passwd 2>/dev/null || true
     chmod 600 /tmp/.vnc/passwd
-    x11vnc -display :99 -forever -shared -rfbauth /tmp/.vnc/passwd -rfbport 5900 &
+    x11vnc -display :99 -forever -shared -rfbauth /tmp/.vnc/passwd -rfbport 5900 ${X11VNC_EXTRA_ARGS} &
     echo $! > /tmp/x11vnc.pid
     echo "VNC server started with password authentication"
   else
-    x11vnc -display :99 -forever -shared -nopw -rfbport 5900 &
+    x11vnc -display :99 -forever -shared -nopw -rfbport 5900 ${X11VNC_EXTRA_ARGS} &
     echo $! > /tmp/x11vnc.pid
     echo "VNC server started without password"
   fi
 }
-start_x11vnc
 
 # A VNC server that accepts TCP but never sends the "RFB 003.008" banner is a
 # wedged x11vnc: the port looks open, every viewer sits at "Connecting...", and
@@ -76,12 +77,25 @@ x11vnc_diag() {
     "state=$(grep -E '^State' "/proc/$pid/status" 2>/dev/null | tr -s '\t ' ' ')" \
     "wchan=$(cat "/proc/$pid/wchan" 2>/dev/null)" \
     "syscall=$(cut -d' ' -f1 "/proc/$pid/syscall" 2>/dev/null)" \
+    "utime/stime=$(awk '{print $14"/"$15}' "/proc/$pid/stat" 2>/dev/null)" \
     "threads=$(ls "/proc/$pid/task" 2>/dev/null | wc -l)" \
     "fds=$(ls "/proc/$pid/fd" 2>/dev/null | wc -l)"
+  # Userspace backtrace (x11vnc is this subshell's child, so Yama ptrace_scope=1
+  # allows it). Module load addresses let the trace be symbolised offline against
+  # the Debian x11vnc-dbgsym / libvncserver1 packages.
+  if command -v eu-stack >/dev/null 2>&1 && [ -n "$pid" ]; then
+    grep -E 'r-xp.*(x11vnc|libvncserver|libX11|libc\.so)' "/proc/$pid/maps" 2>/dev/null | sed 's/^/[vnc-watchdog] map /'
+    for i in 1 2 3; do
+      echo "[vnc-watchdog] stack sample $i:"
+      timeout 10 eu-stack -p "$pid" -m 2>&1 | sed 's/^/[vnc-watchdog]   /' | head -40
+      sleep 1
+    done
+  fi
 }
 
 VNC_WATCHDOG_INTERVAL=${VNC_WATCHDOG_INTERVAL:-20}
 (
+  start_x11vnc
   sleep 5
   strikes=0
   while true; do
