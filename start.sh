@@ -39,19 +39,28 @@ sleep 2
 pkill -x xmessage >/dev/null 2>&1 || true
 
 # Start VNC server with password if provided.
-# X11VNC_EXTRA_ARGS lets an operator try x11vnc flags (e.g. -noxdamage) without
-# rebuilding the image.
+#
+# x11vnc runs under a small soft RLIMIT_NOFILE on purpose. libvncserver's
+# rfbProcessNewConnection() counts open descriptors by calling fcntl() on every
+# fd from 0 to the soft limit before it accepts a client (its fd-quota check,
+# the CVE-2020-14405 fix). Container runtimes that hand pods a soft limit of
+# ~1e9 (systemd's "infinity") turn that into minutes of CPU per connection:
+# the port accepts, no "RFB 003.008" banner ever comes, every viewer sits at
+# "Connecting...". x11vnc needs a handful of fds; 4096 keeps the loop at ~1 ms.
+# X11VNC_EXTRA_ARGS lets an operator try x11vnc flags without rebuilding.
+X11VNC_NOFILE=${X11VNC_NOFILE:-4096}
+echo "nofile limits: soft=$(ulimit -Sn) hard=$(ulimit -Hn); x11vnc will use soft=${X11VNC_NOFILE}"
 start_x11vnc() {
   if [ -n "$VNC_PASSWORD" ]; then
     echo "Setting up VNC password..."
     mkdir -p /tmp/.vnc
     x11vnc -storepasswd "$VNC_PASSWORD" /tmp/.vnc/passwd 2>/dev/null || true
     chmod 600 /tmp/.vnc/passwd
-    x11vnc -display :99 -forever -shared -rfbauth /tmp/.vnc/passwd -rfbport 5900 ${X11VNC_EXTRA_ARGS} &
+    ( ulimit -S -n "${X11VNC_NOFILE}" 2>/dev/null; exec x11vnc -display :99 -forever -shared -rfbauth /tmp/.vnc/passwd -rfbport 5900 ${X11VNC_EXTRA_ARGS} ) &
     echo $! > /tmp/x11vnc.pid
     echo "VNC server started with password authentication"
   else
-    x11vnc -display :99 -forever -shared -nopw -rfbport 5900 ${X11VNC_EXTRA_ARGS} &
+    ( ulimit -S -n "${X11VNC_NOFILE}" 2>/dev/null; exec x11vnc -display :99 -forever -shared -nopw -rfbport 5900 ${X11VNC_EXTRA_ARGS} ) &
     echo $! > /tmp/x11vnc.pid
     echo "VNC server started without password"
   fi
@@ -93,7 +102,7 @@ x11vnc_diag() {
   fi
 }
 
-VNC_WATCHDOG_INTERVAL=${VNC_WATCHDOG_INTERVAL:-20}
+VNC_WATCHDOG_INTERVAL=${VNC_WATCHDOG_INTERVAL:-60}
 (
   start_x11vnc
   sleep 5
