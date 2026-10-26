@@ -158,13 +158,16 @@ def test_keymap_leaves_x11vnc_spare_keycodes(container_name, wait_for_services):
     binding it to a keycode with no symbols and never reuses a bound one. The
     stock Xvfb US keymap has only 18 such keycodes, so the 19th distinct
     non-ASCII character of a session was silently dropped
-    (remote-browser-service#74). Count the empty keycodes of the live keymap.
+    (remote-browser-service#74). Count the empty keycodes of the live keymap,
+    and check that the keycodes Chrome or fluxbox treat as system keys (volume,
+    power, BrowserBack, BrowserRefresh, ...) stayed bound, so x11vnc never picks
+    them (remote-browser#5).
     """
     logs = subprocess.run(
         ["docker", "logs", container_name],
         capture_output=True, text=True,
     ).stdout
-    assert "keymap: freed the XF86 keycodes for x11vnc" in logs, \
+    assert "keymap: freed the XF86 keycodes for x11vnc, kept Chrome's system keycodes" in logs, \
         "start.sh should log that it freed the XF86 keycodes"
     keymap = subprocess.run(
         ["docker", "exec", container_name, "xkbcomp", "-xkb", ":99", "-"],
@@ -173,10 +176,129 @@ def test_keymap_leaves_x11vnc_spare_keycodes(container_name, wait_for_services):
     keycodes = keymap.split("xkb_keycodes", 1)[1].split("};", 1)[0]
     lo = int(re.search(r"minimum\s*=\s*(\d+);", keycodes).group(1))
     hi = int(re.search(r"maximum\s*=\s*(\d+);", keycodes).group(1))
+    code = {name: int(n) for name, n in re.findall(r"<([^>]+)>\s*=\s*(\d+);", keycodes)}
     symbols = keymap.split("xkb_symbols", 1)[1]
-    bound = len(re.findall(r"^\s*key\s+<[^>]+>\s*\{", symbols, re.M))
+    names = re.findall(r"^\s*key\s+<([^>]+)>\s*\{", symbols, re.M)
     # This also counts keycode 8, which has no name and which x11vnc does not
-    # list, so the stock keymap comes out at 19 here and the patched one at 113.
-    spare = (hi - lo + 1) - bound
-    print(f"keycodes {lo}..{hi}, {bound} with symbols, {spare} spare")
-    assert spare >= 100, f"x11vnc needs >= 100 spare keycodes (got {spare}; stock is 19)"
+    # use, so the stock keymap comes out at 19 here and the patched one at 73.
+    spare = (hi - lo + 1) - len(names)
+    print(f"keycodes {lo}..{hi}, {len(names)} with symbols, {spare} spare")
+    assert spare >= len(set(NON_ASCII_TEXT) - {" "}), \
+        f"x11vnc needs a spare keycode per distinct non-ASCII character (got {spare}; stock is 19)"
+    # Volume, power, IntlYen, Open, Paste, the amixer keys fluxbox grabs, Back,
+    # Forward and Reload: a character typed on one of these is lost or reloads.
+    reserved = {122, 123, 124, 132, 142, 143, 160, 161, 164, 165, 166, 167, 174, 176, 181}
+    unbound = sorted(reserved - {code.get(name) for name in names})
+    assert not unbound, f"system keycodes left spare for x11vnc: {unbound}"
+
+
+# 70 distinct characters the US keymap lacks, so x11vnc has to bind every one of
+# them to a spare keycode, almost all 72 of them: the Russian pangram (all 33
+# letters), the Greek alphabet and accented Latin.
+NON_ASCII_TEXT = (
+    "съешь же ещё этих мягких французских булок да выпей чаю "
+    "αβγδεζηθικλμνξοπρστυφχψω "
+    "ąćęłńśźżčďěňř"
+)
+
+# DOM `code`s of keys Chrome or the desktop act on. A typed character must not
+# arrive on one of these: the volume, power and lock keys swallow it, BrowserBack
+# and BrowserRefresh navigate away (remote-browser#5).
+SYSTEM_KEY_CODES = re.compile(
+    r"^(Audio|Browser|Launch|Media|Brightness|Mail|Display|Power|Sleep|WakeUp|"
+    r"Eject|Open|Paste|Copy|Cut|Find|Undo|Again|Select|Props|Help|"
+    r"ShowAllWindows|ContextMenu)"
+)
+
+
+class _VncKeyboard:
+    """The few RFB 3.8 messages needed to send keys, as RBS `type` does."""
+
+    def __init__(self, host, port, password):
+        self.sock = socket.create_connection((host, port), timeout=10)
+        version = self._read(12)
+        assert version.startswith(b"RFB "), f"not a VNC server: {version!r}"
+        self.sock.sendall(b"RFB 003.008\n")
+        types = self._read(self._read(1)[0])
+        if 2 in types and password:
+            from Crypto.Cipher import DES
+            self.sock.sendall(b"\x02")
+            # VNC authentication: DES with the bit order of each key byte reversed.
+            key = bytes(int(f"{b:08b}"[::-1], 2) for b in password.encode()[:8].ljust(8, b"\0"))
+            self.sock.sendall(DES.new(key, DES.MODE_ECB).encrypt(self._read(16)))
+        else:
+            assert 1 in types, f"server wants a password (security types {list(types)})"
+            self.sock.sendall(b"\x01")
+        assert self._read(4) == b"\0\0\0\0", "VNC authentication failed"
+        self.sock.sendall(b"\x01")  # ClientInit: shared
+        self._read(20)
+        self._read(int.from_bytes(self._read(4), "big"))
+
+    def _read(self, n):
+        data = b""
+        while len(data) < n:
+            chunk = self.sock.recv(n - len(data))
+            assert chunk, "VNC server closed the connection"
+            data += chunk
+        return data
+
+    def key(self, keysym, down):
+        self.sock.sendall(bytes([4, int(down), 0, 0]) + keysym.to_bytes(4, "big"))
+
+    def close(self):
+        self.sock.close()
+
+
+def _keysym(char):
+    cp = ord(char)
+    return cp if cp <= 0xFF else 0x01000000 + cp
+
+
+def test_vnc_types_non_ascii_text_into_chrome(wait_for_services):
+    """Type 70 distinct non-ASCII characters through VNC into a Chrome textarea.
+
+    x11vnc binds each one to a spare keycode, and Chrome reads a key by its
+    keycode, not by its keysym. So a spare keycode that Chrome knows as volume,
+    power, BrowserBack or BrowserRefresh loses the character or reloads the page
+    (remote-browser#5). The keymap test above only counts spare keycodes; this
+    one checks what Chrome actually receives. It types the way RBS `type` does
+    (remote-browser-service server/api/vnc.py): release every new keysym first so
+    x11vnc binds it, wait for Chrome to see the new mapping, then press each key.
+    """
+    assert len(set(NON_ASCII_TEXT) - {" "}) == 70
+    devtools_token = os.environ.get("DEVTOOLS_TOKEN")
+    cdp_url = (f"http://token:{devtools_token}@localhost:9222" if devtools_token
+               else "http://localhost:9222")
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as p:
+        browser = p.chromium.connect_over_cdp(cdp_url)
+        page = browser.contexts[0].pages[0]
+        page.bring_to_front()
+        page.set_content(
+            "<textarea id=t style='position:fixed;inset:0;width:100%;height:100%'></textarea>"
+            "<script>window.codes = []; document.addEventListener('keydown',"
+            " e => window.codes.push([e.key, e.code]), true);</script>")
+        page.focus("#t")
+        page.evaluate("window.marker = 1")
+        vnc = _VncKeyboard("localhost", 5900, os.environ.get("VNC_PASSWORD", "testpass123"))
+        try:
+            for chunk in (NON_ASCII_TEXT[i:i + 20] for i in range(0, len(NON_ASCII_TEXT), 20)):
+                for char in chunk:
+                    vnc.key(_keysym(char), False)
+                time.sleep(0.5)
+                for char in chunk:
+                    vnc.key(_keysym(char), True)
+                    vnc.key(_keysym(char), False)
+                    time.sleep(0.02)
+            time.sleep(1)
+        finally:
+            vnc.close()
+        assert page.evaluate("window.marker") == 1, "a typed character reloaded the page"
+        value = page.evaluate("document.getElementById('t').value")
+        codes = page.evaluate("window.codes")
+        browser.close()
+    lost = sorted(set(NON_ASCII_TEXT) - set(value))
+    system = sorted({code for key, code in codes if SYSTEM_KEY_CODES.match(code)})
+    print(f"typed {len(value)}/{len(NON_ASCII_TEXT)} characters; lost {''.join(lost)!r}")
+    assert value == NON_ASCII_TEXT, f"lost {len(lost)} characters: {''.join(lost)!r}"
+    assert not system, f"typed characters arrived as system keys: {system}"
