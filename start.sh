@@ -23,12 +23,42 @@ done
 # x11vnc types a character the keymap lacks (Cyrillic, accented letters, ...) by
 # mapping it onto a keycode that has no symbols, and the stock US keymap has only
 # 18 of those: the 19th distinct such character in a session was silently dropped
-# (remote-browser-service#74). Drop the XF86 media/launcher keys (~94 keycodes)
-# that nobody presses in a remote browser, so x11vnc has ~113 spare keycodes.
+# (remote-browser-service#74). So drop the XF86 media/launcher keys that nobody
+# presses in a remote browser, which leaves x11vnc 72 spare keycodes.
+#
+# Keep the keycodes that are system keys to Chrome or fluxbox, though: Chrome
+# reads a key by its keycode (evdev code + 8), not by the keysym x11vnc put on
+# it, so a character typed on a freed BrowserBack/BrowserForward keycode is lost,
+# one on BrowserRefresh reloads the page, and the volume/power/launcher/media
+# ones fire their action as well. Fluxbox's default keys file grabs raw keycodes
+# 160, 174 and 176 for amixer, which swallows the character (remote-browser#5).
+# A reserved keycode keeps its XF86 binding, or gets VoidSymbol if it has none,
+# so x11vnc never picks it (132, IntlYen, is one of the stock 18 spares). F13-F24,
+# Lang5 (93), IntlRo (97) and the keycodes Chrome has no code for stay free.
+RESERVED_KEYCODES="121 122 123 124 128 132 141 142 143 145 148 150 151 152 160 \
+161 163 164 165 166 167 169 171 172 173 174 175 176 179 180 181 209 215 216 \
+225 232 233 235 239 240 241"
 if xkbcomp -xkb :99 /tmp/keymap.xkb 2>/dev/null \
-    && sed -E '/^ *key <[^>]+> *\{ *\[ *XF86/d' /tmp/keymap.xkb > /tmp/keymap-free.xkb \
+    && RESERVED_KEYCODES="$RESERVED_KEYCODES" python3 - /tmp/keymap.xkb /tmp/keymap-free.xkb <<'PY' \
     && xkbcomp -w 0 /tmp/keymap-free.xkb :99 2>/dev/null; then
-  echo "keymap: freed the XF86 keycodes for x11vnc"
+import os, re, sys
+keymap = open(sys.argv[1]).read()
+keycodes = keymap.split("xkb_keycodes", 1)[1].split("\n};", 1)[0]
+code = {name: int(n) for name, n in re.findall(r"<([^>]+)>\s*=\s*(\d+);", keycodes)}
+reserved = {int(n) for n in os.environ["RESERVED_KEYCODES"].split()}
+bound = {code.get(name) for name in re.findall(r"^\s*key\s+<([^>]+)>", keymap, re.M)}
+out = []
+for line in keymap.splitlines(keepends=True):
+    key = re.match(r"\s*key\s+<([^>]+)>\s*\{\s*\[\s*XF86", line)
+    if key and code.get(key.group(1)) not in reserved:
+        continue
+    out.append(line)
+    if re.match(r"\s*xkb_symbols\b", line):
+        out += [f"    key <{name}> {{ [ VoidSymbol ] }};\n" for name, n in code.items()
+                if n in reserved and n not in bound]
+open(sys.argv[2], "w").write("".join(out))
+PY
+  echo "keymap: freed the XF86 keycodes for x11vnc, kept Chrome's system keycodes"
 else
   echo "keymap: could not free the XF86 keycodes; x11vnc keeps 18 spare"
 fi
