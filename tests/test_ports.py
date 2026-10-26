@@ -9,6 +9,7 @@ import os
 import requests
 import pytest
 import subprocess
+import re
 
 
 @pytest.fixture(scope="module")
@@ -148,3 +149,34 @@ def test_x11vnc_runs_under_a_small_nofile_limit(container_name, wait_for_service
         capture_output=True, text=True, check=True,
     ).stdout.replace("\0", " ")
     assert cmd.startswith("x11vnc"), f"pid file does not point at x11vnc: {cmd!r}"
+
+
+def test_keymap_leaves_x11vnc_spare_keycodes(container_name, wait_for_services):
+    """start.sh must free the XF86 keycodes so x11vnc can type non-ASCII text.
+
+    x11vnc types a character the keymap lacks (Cyrillic, accented Latin, ...) by
+    binding it to a keycode with no symbols and never reuses a bound one. The
+    stock Xvfb US keymap has only 18 such keycodes, so the 19th distinct
+    non-ASCII character of a session was silently dropped
+    (remote-browser-service#74). Count the empty keycodes of the live keymap.
+    """
+    logs = subprocess.run(
+        ["docker", "logs", container_name],
+        capture_output=True, text=True,
+    ).stdout
+    assert "keymap: freed the XF86 keycodes for x11vnc" in logs, \
+        "start.sh should log that it freed the XF86 keycodes"
+    keymap = subprocess.run(
+        ["docker", "exec", container_name, "xkbcomp", "-xkb", ":99", "-"],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    keycodes = keymap.split("xkb_keycodes", 1)[1].split("};", 1)[0]
+    lo = int(re.search(r"minimum\s*=\s*(\d+);", keycodes).group(1))
+    hi = int(re.search(r"maximum\s*=\s*(\d+);", keycodes).group(1))
+    symbols = keymap.split("xkb_symbols", 1)[1]
+    bound = len(re.findall(r"^\s*key\s+<[^>]+>\s*\{", symbols, re.M))
+    # This also counts keycode 8, which has no name and which x11vnc does not
+    # list, so the stock keymap comes out at 19 here and the patched one at 113.
+    spare = (hi - lo + 1) - bound
+    print(f"keycodes {lo}..{hi}, {bound} with symbols, {spare} spare")
+    assert spare >= 100, f"x11vnc needs >= 100 spare keycodes (got {spare}; stock is 19)"
