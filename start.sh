@@ -5,7 +5,9 @@ mkdir -p "${SESSION_DATA_PATH}"
 
 # Start Xvfb in the background with configurable resolution
 RESOLUTION=${VNC_RESOLUTION:-1920x1080x24}
-Xvfb :99 -screen 0 ${RESOLUTION} &
+# -noreset: Xvfb otherwise restores its stock keymap whenever its last client
+# disconnects, which would undo the keymap change below.
+Xvfb :99 -screen 0 ${RESOLUTION} -noreset &
 export DISPLAY=:99
 
 # Wait for Xvfb to be ready before starting VNC
@@ -17,6 +19,19 @@ for i in {1..30}; do
   echo "Waiting for Xvfb... ($i/30)"
   sleep 1
 done
+
+# x11vnc types a character the keymap lacks (Cyrillic, accented letters, ...) by
+# mapping it onto a keycode that has no symbols, and the stock US keymap has only
+# 18 of those: the 19th distinct such character in a session was silently dropped
+# (remote-browser-service#74). Drop the XF86 media/launcher keys (~94 keycodes)
+# that nobody presses in a remote browser, so x11vnc has ~113 spare keycodes.
+if xkbcomp -xkb :99 /tmp/keymap.xkb 2>/dev/null \
+    && sed -E '/^ *key <[^>]+> *\{ *\[ *XF86/d' /tmp/keymap.xkb > /tmp/keymap-free.xkb \
+    && xkbcomp -w 0 /tmp/keymap-free.xkb :99 2>/dev/null; then
+  echo "keymap: freed the XF86 keycodes for x11vnc"
+else
+  echo "keymap: could not free the XF86 keycodes; x11vnc keeps 18 spare"
+fi
 
 # Force every window to map maximized so a popup (e.g. OAuth/sign-in opened via
 # window.open) overlays the main window full-screen instead of tiling beside it.
