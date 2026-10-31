@@ -181,6 +181,19 @@ Use `EXTRA_BROWSER_PARAMS` to pass additional Chrome flags if needed.
 - `SESSION_DATA_PATH`: Set the path for Chrome user data directory (default: `/session-data`)
 - `EXTRA_BROWSER_PARAMS`: Additional Chrome/Chromium command-line arguments (optional)
 
+### Per-session proxy
+
+With `PROXY_ENABLED=1`, Chromium browses only through a local forwarder on `127.0.0.1:${PROXY_FORWARDER_PORT}` that adds `Proxy-Authorization` towards the upstream in `PROXY_URL` (Chromium cannot take `user:pass` in `--proxy-server`). Without `PROXY_ENABLED=1` nothing changes.
+
+- `PROXY_ENABLED`: `1` turns the proxy on
+- `PROXY_URL`: upstream, `http://<user>:<pass>@host:port` with URL-encoded userinfo. A credential: pass it from a Secret (`secretKeyRef`). start.sh hands it only to the forwarder, through its environment, never argv, and never logs it
+- `PROXY_COUNTRY`: exit country, logged at startup (e.g. `de`)
+- `TZ`, `LANG`, `LANGUAGE`: timezone and locale for Chromium (`LC_ALL` is set to `LANG`). The image ships tzdata and the `.UTF-8` locales `en_US en_CA en_GB de_DE fr_FR nl_NL es_ES it_IT ru_RU uk_UA`
+- `BROWSER_LANG`: `--lang` / `--accept-lang` for Chromium (e.g. `de-DE`)
+- `PROXY_FORWARDER_PORT`: forwarder port (default: `3128`); `PROXY_FORWARDER_TIMEOUT`: seconds to wait for it to listen (default: `15`)
+
+Chromium also gets `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`, `--webrtc-ip-handling-policy=disable_non_proxied_udp` and `--disable-background-networking`. Fail closed: with `PROXY_ENABLED=1` the container exits before Chromium starts if `PROXY_URL` is empty or unusable or the forwarder never listens. If the forwarder dies later, page loads fail with `ERR_PROXY_CONNECTION_FAILED` until the watchdog restarts it (within ~5 s); nothing is ever sent directly.
+
 ## Kubernetes Deployment
 
 For Kubernetes deployment examples, see [Kubernetes Deployment Guide](docs/k8s.md).

@@ -84,6 +84,27 @@ jobs:
         run: |
           pip install -r tests/requirements.txt
 
+      - name: Run proxy unit tests (forwarder + start.sh wiring)
+        run: |
+          pytest tests/test_proxy_forwarder.py tests/test_start_sh_proxy.py -v
+
+      - name: Proxy fails closed without PROXY_URL
+        run: |
+          if docker run --rm -e PROXY_ENABLED=1 test-remote-browser:latest; then
+            echo "container started with PROXY_ENABLED=1 and no PROXY_URL"; exit 1
+          fi
+
+      - name: Proxy locales and tzdata are in the image
+        run: |
+          docker run --rm --entrypoint sh test-remote-browser:latest -c '
+            set -e
+            for l in en_US en_CA en_GB de_DE fr_FR nl_NL es_ES it_IT ru_RU uk_UA; do
+              locale -a | grep -qix "$l.utf8" || { echo "missing locale $l"; exit 1; }
+            done
+            test -f /usr/share/zoneinfo/Europe/Berlin
+            test "$(TZ=Europe/Berlin date +%Z)" = CET -o "$(TZ=Europe/Berlin date +%Z)" = CEST
+            test -x /proxy_forwarder.py'
+
       - name: Start test container
         run: |
           echo "Starting container with VNC password..."

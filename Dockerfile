@@ -16,6 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     elfutils \
     python3 \
     ca-certificates \
+    tzdata \
+    locales \
     fonts-liberation \
     fonts-dejavu \
     xdg-utils \
@@ -40,11 +42,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/chromium /usr/local/bin/chrome
 
+# Locales for the per-session proxy countries (remote-browser-service#104):
+# start.sh sets LANG/LC_ALL for Chromium to the exit country's locale.
+RUN printf '%s.UTF-8 UTF-8\n' en_US en_CA en_GB de_DE fr_FR nl_NL es_ES it_IT ru_RU uk_UA > /etc/locale.gen \
+    && locale-gen
+
 # Copy startup script and proxy
 COPY start.sh /start.sh
 COPY devtools_proxy.py /devtools_proxy.py
 COPY profile_agent.py /profile_agent.py
-RUN chmod +x /start.sh /devtools_proxy.py /profile_agent.py
+COPY proxy_forwarder.py /proxy_forwarder.py
+RUN chmod +x /start.sh /devtools_proxy.py /profile_agent.py /proxy_forwarder.py
 
 # Create non-root user for Chromium (enables sandbox, no --no-sandbox needed)
 RUN useradd -m -u 1000 -s /bin/bash browser \
