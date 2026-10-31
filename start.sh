@@ -3,6 +3,20 @@
 SESSION_DATA_PATH=${SESSION_DATA_PATH:-/session-data}
 mkdir -p "${SESSION_DATA_PATH}"
 
+# Per-session proxy (remote-browser-service#104). With PROXY_ENABLED=1 the
+# service hands the pod PROXY_URL (an http://user:pass@host:port credential),
+# and Chromium must never browse without it: no PROXY_URL means no browser.
+# PROXY_URL stays a plain shell variable from here on, so no child process
+# inherits it except the forwarder, which gets it in its own environment
+# (never argv, which `ps` shows). Never echo it.
+if [ "${PROXY_ENABLED:-0}" = "1" ]; then
+  if [ -z "$PROXY_URL" ]; then
+    echo "PROXY_ENABLED=1 but PROXY_URL is empty: refusing to start Chromium unproxied"
+    exit 1
+  fi
+  export -n PROXY_URL
+fi
+
 # Start Xvfb in the background with configurable resolution
 RESOLUTION=${VNC_RESOLUTION:-1920x1080x24}
 # -noreset: Xvfb otherwise restores its stock keymap whenever its last client
@@ -202,6 +216,52 @@ if [ "${PROFILE_RESTORE:-0}" = "1" ]; then
   fi
 fi
 
+# With PROXY_ENABLED=1, Chromium reaches the network only through a local
+# forwarder that adds the upstream's Proxy-Authorization (Chromium cannot take
+# user:pass in --proxy-server). If the forwarder dies, Chromium points at a dead
+# loopback port and every load fails with ERR_PROXY_CONNECTION_FAILED: that is
+# the fail-closed behaviour. The watchdog below restarts it. No
+# --proxy-bypass-list beyond Chromium's implicit loopback.
+PROXY_FORWARDER_PORT=${PROXY_FORWARDER_PORT:-3128}
+PROXY_FORWARDER_TIMEOUT=${PROXY_FORWARDER_TIMEOUT:-15}
+PROXY_FLAGS=()
+start_proxy_forwarder() {
+  PROXY_URL="$PROXY_URL" PROXY_FORWARDER_PORT="$PROXY_FORWARDER_PORT" python3 /proxy_forwarder.py &
+  echo $! > /tmp/proxy_forwarder.pid
+}
+proxy_forwarder_listening() {
+  ( exec 3<>"/dev/tcp/127.0.0.1/${PROXY_FORWARDER_PORT}" ) 2>/dev/null
+}
+if [ "${PROXY_ENABLED:-0}" = "1" ]; then
+  echo "PROXY_ENABLED=1 (country ${PROXY_COUNTRY:-?}): starting proxy forwarder on 127.0.0.1:${PROXY_FORWARDER_PORT}"
+  start_proxy_forwarder
+  for i in $(seq 1 $((PROXY_FORWARDER_TIMEOUT * 2))); do
+    proxy_forwarder_listening && break
+    kill -0 "$(cat /tmp/proxy_forwarder.pid)" 2>/dev/null || break
+    sleep 0.5
+  done
+  if ! proxy_forwarder_listening; then
+    echo "Proxy forwarder is not listening on 127.0.0.1:${PROXY_FORWARDER_PORT}: refusing to start Chromium unproxied"
+    exit 1
+  fi
+  echo "Proxy forwarder is listening"
+  PROXY_FLAGS=(
+    --proxy-server="http://127.0.0.1:${PROXY_FORWARDER_PORT}"
+    --force-webrtc-ip-handling-policy=disable_non_proxied_udp
+    --webrtc-ip-handling-policy=disable_non_proxied_udp
+    # Component updates and other background fetches would spend proxy bandwidth.
+    --disable-background-networking
+  )
+  if [ -n "$BROWSER_LANG" ]; then
+    PROXY_FLAGS+=(--lang="$BROWSER_LANG" --accept-lang="$BROWSER_LANG")
+  fi
+  # The browser's timezone and locale follow the exit country.
+  export TZ LANG LANGUAGE
+  if [ -n "$LANG" ]; then
+    export LC_ALL="$LANG"
+  fi
+fi
+
 # Start Chrome/Chromium with remote debugging on loopback-only internal port
 INTERNAL_DEBUG_PORT=9223
 EXTERNAL_DEBUG_PORT=9222
@@ -221,7 +281,7 @@ start_chromium() {
   # --disable-background-timer-throttling prevents background throttling
   # --disable-backgrounding-occluded-windows prevents window backgrounding
   # --disable-renderer-backgrounding prevents renderer backgrounding
-  /usr/local/bin/chrome --remote-debugging-port=${INTERNAL_DEBUG_PORT} --remote-debugging-address=127.0.0.1 --remote-allow-origins=* --user-data-dir="${SESSION_DATA_PATH}" --disable-dev-shm-usage --start-maximized --window-size=1920,1080 --new-window about:blank --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --no-sandbox ${EXTRA_BROWSER_PARAMS} 2>&1 &
+  /usr/local/bin/chrome --remote-debugging-port=${INTERNAL_DEBUG_PORT} --remote-debugging-address=127.0.0.1 --remote-allow-origins=* --user-data-dir="${SESSION_DATA_PATH}" --disable-dev-shm-usage --start-maximized --window-size=1920,1080 --new-window about:blank --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --no-sandbox "${PROXY_FLAGS[@]}" ${EXTRA_BROWSER_PARAMS} 2>&1 &
   CHROMIUM_PID=$!
   echo $CHROMIUM_PID > /tmp/chromium.pid
   echo "Chromium started with PID: $CHROMIUM_PID"
@@ -251,6 +311,10 @@ while true; do
   if [ -f /tmp/no_restart ]; then
     sleep 5
     continue
+  fi
+  if [ "${PROXY_ENABLED:-0}" = "1" ] && ! kill -0 "$(cat /tmp/proxy_forwarder.pid 2>/dev/null)" 2>/dev/null; then
+    echo "[proxy-watchdog] proxy forwarder died, restarting it"
+    start_proxy_forwarder
   fi
   if [ -f /tmp/chromium.pid ]; then
     CHROMIUM_PID=$(cat /tmp/chromium.pid)
