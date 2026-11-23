@@ -94,6 +94,18 @@ jobs:
             echo "container started with PROXY_ENABLED=1 and no PROXY_URL"; exit 1
           fi
 
+      - name: Chromium is at or above the security floor
+        run: |
+          floor="$(sed -n 's/^ARG CHROMIUM_MIN_VERSION=//p' Dockerfile)"
+          test -n "$floor"
+          docker run --rm -e FLOOR="$floor" --entrypoint sh test-remote-browser:latest -c '
+            set -e
+            chromium --version
+            dpkg-query -W chromium chromium-common chromium-sandbox
+            v="$(dpkg-query -W -f="\${Version}" chromium)"
+            dpkg --compare-versions "$v" ge "$FLOOR" || { echo "chromium $v is below the security floor $FLOOR"; exit 1; }
+            echo "chromium $v >= security floor $FLOOR"'
+
       - name: Proxy locales and tzdata are in the image
         run: |
           docker run --rm --entrypoint sh test-remote-browser:latest -c '

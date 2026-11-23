@@ -3,6 +3,13 @@ FROM debian:bookworm-slim
 # Avoid interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Lowest chromium this image may ship (security floor). Raise it when a Chromium
+# CVE lands in bookworm-security: the new value changes this layer's cache key, so
+# CI's GHA layer cache cannot hand back a stale apt layer, and the build FAILS
+# (instead of shipping) if apt still serves an older chromium.
+# 156.0.8078.108-1~deb12u1 = DSA-6653-1, CVE-2026-125350 (issue #9).
+ARG CHROMIUM_MIN_VERSION=156.0.8078.108-1~deb12u1
+
 # Install Chromium (NO snap on Debian), VNC, and X11 bits.
 # We intentionally use Debian because Ubuntu's `chromium-browser` is a snap wrapper.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -39,6 +46,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrandr2 \
     libu2f-udev \
     libvulkan1 \
+    && v="$(dpkg-query -W -f='${Version}' chromium)" \
+    && echo "chromium $v (security floor $CHROMIUM_MIN_VERSION)" \
+    && dpkg --compare-versions "$v" ge "$CHROMIUM_MIN_VERSION" \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/chromium /usr/local/bin/chrome
 
